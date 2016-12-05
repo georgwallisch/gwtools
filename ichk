@@ -1,0 +1,2 @@
+#!/bin/bash
+/usr/sbin/icinga -v /etc/icinga/icinga.cfg

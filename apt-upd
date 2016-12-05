@@ -1,0 +1,10 @@
+#!/bin/bash
+apt-get update
+apt-get -y -f upgrade
+while [ "$1" != "" ]
+  do
+    apt-get -y install $1
+    shift    
+done
+apt-get -y purge
+apt-get -y autoclean
