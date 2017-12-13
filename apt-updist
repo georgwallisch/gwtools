@@ -1,6 +1,10 @@
 #!/bin/bash
 apt-get update
-apt-get -y -f dist-upgrade
 apt-get -y autoclean
+apt-get -y -f dist-upgrade
+while (( "$#")); do
+    apt-get -y install $1
+    shift    
+done
 apt-get -y autoremove
 

@@ -1,10 +1,10 @@
 #!/bin/bash
 apt-get update
+apt-get -y autoclean
 apt-get -y -f upgrade
-while [ "$1" != "" ]
-  do
+while (( "$#")); do
     apt-get -y install $1
     shift    
 done
-apt-get -y purge
-apt-get -y autoclean
+apt-get -y autoremove
+
