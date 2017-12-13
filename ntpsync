@@ -1,5 +1,10 @@
 #!/bin/bash
 
+if [ $(id -u) -ne 0 ]; then
+	echo -e "Script must be run as root. Try 'sudo $0'\n"
+	exit 1
+fi
+
 # Location of logfile
 LOGFILE="/var/log/ntplog.log"
 

@@ -1,13 +1,13 @@
 #!/bin/bash
 
 if [ $(id -u) -ne 0 ]; then
-	echo -e "Script must be run as root. Try 'sudo ./$0'\n"
+	echo -e "Script must be run as root. Try 'sudo $0'\n"
 	exit 1
 fi
 
-apt-get update
-apt-get -yt $(lsb_release -cs)-security dist-upgrade
-apt-get --trivial-only dist-upgrade 
+apt-get update &&
+apt-get -yt $(lsb_release -cs)-security dist-upgrade &&
+apt-get --trivial-only dist-upgrade &&
 apt-get -y autoclean
 apt-get -y autoremove
 

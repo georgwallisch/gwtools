@@ -1,16 +1,16 @@
 #!/bin/bash
 
 if [ $(id -u) -ne 0 ]; then
-	echo -e "Script must be run as root. Try 'sudo ./$o'\n"
+	echo -e "Script must be run as root. Try 'sudo $0'\n"
 	exit 1
 fi
 
-apt-get update
-apt-get -y autoclean
-apt-get -y -f dist-upgrade
+apt-get update &&
+apt-get -y -f dist-upgrade &&
 while (( "$#")); do
     apt-get -y install $1
     shift    
 done
+apt-get -y autoclean
 apt-get -y autoremove
 
