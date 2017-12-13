@@ -6,11 +6,11 @@ if [ $(id -u) -ne 0 ]; then
 fi
     
 if [ -f "/etc/icinga/icinga.cfg" ]; then
-	service icinga restart
+	service icinga reload
 fi
 
 if [ -f "/etc/icinga2/icinga2.conf" ]; then
-	service icinga2 restart
+	service icinga2 reload
 fi
 
 
