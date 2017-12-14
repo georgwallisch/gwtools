@@ -93,7 +93,7 @@ EOF
 }
 
 echo -e "\n**********************************"
-echo -e "* GW Setup Script for Raspi v0.1 *"
+echo -e "* GW Setup Script for Raspi v0.2 *"
 echo -e "**********************************\n"
 
 if [ $(id -u) -ne 0 ]; then
@@ -117,50 +117,53 @@ if [ $? -eq 0 ]; then
 fi
   
 apt-get update &&
-apt-get -y -f dist-upgrade &&
+apt-get -y dist-upgrade &&
 apt-get -y install git samba-common samba tdb-tools
-
-echo -e "\nErzeuge Locale $LOCALE"
-do_change_locale()
 
 echo -e "\nÄndere Zeitzone nach $TIMEZONE"
 rm /etc/localtime
 echo "$TIMEZONE" > /etc/timezone
 dpkg-reconfigure -f noninteractive tzdata
 
+echo -e "\nErzeuge Locale $LOCALE"
+# do_change_locale
+dpkg-reconfigure locales
+
+
 echo -e "\nÄndere Land nach $COUNTRY"
 if [ -e /etc/wpa_supplicant/wpa_supplicant.conf ]; then
 	if grep -q "^country=" /etc/wpa_supplicant/wpa_supplicant.conf ; then
 		sed -i --follow-symlinks "s/^country=.*/country=$COUNTRY/g" /etc/wpa_supplicant/wpa_supplicant.conf
-		else
-			sed -i --follow-symlinks "1i country=$COUNTRY" /etc/wpa_supplicant/wpa_supplicant.conf
-		fi
 	else
-		echo "country=$COUNTRY" > /etc/wpa_supplicant/wpa_supplicant.conf
+		sed -i --follow-symlinks "1i country=$COUNTRY" /etc/wpa_supplicant/wpa_supplicant.conf
 	fi
+else
+	echo "country=$COUNTRY" > /etc/wpa_supplicant/wpa_supplicant.conf
 fi
 
 if is_pi ; then
 	
+	SETTING=on
+	
 	echo -e "\nAktiviere SPI"
-	set_config_var dtparam=spi on $CONFIG &&
+	set_config_var dtparam=spi $SETTING $CONFIG &&
 	if ! [ -e $BLACKLIST ]; then
 		touch $BLACKLIST
 	fi
 	sed $BLACKLIST -i -e "s/^\(blacklist[[:space:]]*spi[-_]bcm2708\)/#\1/"
-	dtparam spi=on
+	dtparam spi=$SETTING
 	
 	echo -e "\nAktiviere I2C"
-	set_config_var dtparam=i2c_arm on $CONFIG &&
+	set_config_var dtparam=i2c_arm $SETTING $CONFIG &&
 	if ! [ -e $BLACKLIST ]; then
 		touch $BLACKLIST
-		fi
+	fi
 	sed $BLACKLIST -i -e "s/^\(blacklist[[:space:]]*i2c[-_]bcm2708\)/#\1/"
 	sed /etc/modules -i -e "s/^#[[:space:]]*\(i2c[-_]dev\)/\1/"
 	if ! grep -q "^i2c[-_]dev" /etc/modules; then
 		printf "i2c-dev\n" >> /etc/modules
 	fi
-	dtparam i2c_arm=on
+	dtparam i2c_arm=$SETTING
 	modprobe i2c-dev
 	
 	echo -e "\nAktiviere OneWire"
@@ -177,10 +180,12 @@ if is_pi ; then
 fi
  
 disable_raspi_config_at_boot
-echo -e "\n*** Fertig ***\n\nStarte in 10 sek neu.."
-sleep 10
-sync
-reboot
+whiptail --yesno "Would you like to reboot now?" 20 60 2
+if [ $? -eq 0 ]; then # yes
+	sync
+	reboot
+fi
+exit 0
 
 
 
