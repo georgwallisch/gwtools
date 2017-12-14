@@ -4,15 +4,35 @@ BLACKLIST=/etc/modprobe.d/raspi-blacklist.conf
 CONFIG=/boot/config.txt
 TIMEZONE="Europe/Berlin"
 COUNTRY="DE"
+LOCALE="de_DE.UTF-8"
+
+is_pi () {
+  ARCH=$(dpkg --print-architecture)
+  if [ "$ARCH" = "armhf" ] ; then
+	return 0
+  else
+	return 1
+  fi
+}
 
 disable_raspi_config_at_boot() {
   if [ -e /etc/profile.d/raspi-config.sh ]; then
-    rm -f /etc/profile.d/raspi-config.sh
-    if [ -e /etc/systemd/system/getty@tty1.service.d/raspi-config-override.conf ]; then
-      rm /etc/systemd/system/getty@tty1.service.d/raspi-config-override.conf
-    fi
-    telinit q
+	rm -f /etc/profile.d/raspi-config.sh
+	if [ -e /etc/systemd/system/getty@tty1.service.d/raspi-config-override.conf ]; then
+	  rm /etc/systemd/system/getty@tty1.service.d/raspi-config-override.conf
+	fi
+	telinit q
   fi
+}
+
+do_change_locale() {
+	if ! LOCALE_LINE="$(grep "^$LOCALE " /usr/share/i18n/SUPPORTED)"; then
+	  return 1
+	fi
+	local ENCODING="$(echo $LOCALE_LINE | cut -f2 -d " ")"
+	echo "$LOCALE $ENCODING" > /etc/locale.gen
+	sed -i "s/^\s*LANG=\S*/LANG=$LOCALE/" /etc/default/locale
+	dpkg-reconfigure -f noninteractive locales
 }
 
 set_config_var() {
@@ -24,8 +44,8 @@ local file=assert(io.open(fn))
 local made_change=false
 for line in file:lines() do
   if line:match("^#?%s*"..key.."=.*$") then
-    line=key.."="..value
-    made_change=true
+	line=key.."="..value
+	made_change=true
   end
   print(line)
 end
@@ -44,7 +64,7 @@ local fn=assert(arg[2])
 local file=assert(io.open(fn))
 for line in file:lines() do
   if line:match("^%s*"..key.."=.*$") then
-    line="#"..line
+	line="#"..line
   end
   print(line)
 end
@@ -61,9 +81,9 @@ local found=false
 for line in file:lines() do
   local val = line:match("^%s*"..key.."=(.*)$")
   if (val ~= nil) then
-    print(val)
-    found=true
-    break
+	print(val)
+	found=true
+	break
   end
 end
 if not found then
@@ -93,12 +113,15 @@ CURRENT_HOSTNAME=`cat /etc/hostname | tr -d " \t\n\r"`
 NEW_HOSTNAME=$(whiptail --inputbox "Please enter a hostname" 20 60 "$CURRENT_HOSTNAME" 3>&1 1>&2 2>&3)
 if [ $? -eq 0 ]; then
 	echo $NEW_HOSTNAME > /etc/hostname
-    sed -i "s/127.0.1.1.*$CURRENT_HOSTNAME/127.0.1.1\t$NEW_HOSTNAME/g" /etc/hosts
+	sed -i "s/127.0.1.1.*$CURRENT_HOSTNAME/127.0.1.1\t$NEW_HOSTNAME/g" /etc/hosts
 fi
   
 apt-get update &&
 apt-get -y -f dist-upgrade &&
 apt-get -y install git samba-common samba tdb-tools
+
+echo -e "\nErzeuge Locale $LOCALE"
+do_change_locale()
 
 echo -e "\nÄndere Zeitzone nach $TIMEZONE"
 rm /etc/localtime
@@ -117,37 +140,41 @@ if [ -e /etc/wpa_supplicant/wpa_supplicant.conf ]; then
 	fi
 fi
 
-echo -e "\nAktiviere SPI"
-set_config_var dtparam=spi on $CONFIG &&
-if ! [ -e $BLACKLIST ]; then
-	touch $BLACKLIST
-fi
-sed $BLACKLIST -i -e "s/^\(blacklist[[:space:]]*spi[-_]bcm2708\)/#\1/"
-dtparam spi=on
-
-echo -e "\nAktiviere I2C"
-set_config_var dtparam=i2c_arm on $CONFIG &&
-if ! [ -e $BLACKLIST ]; then
-	touch $BLACKLIST
+if is_pi ; then
+	
+	echo -e "\nAktiviere SPI"
+	set_config_var dtparam=spi on $CONFIG &&
+	if ! [ -e $BLACKLIST ]; then
+		touch $BLACKLIST
 	fi
-sed $BLACKLIST -i -e "s/^\(blacklist[[:space:]]*i2c[-_]bcm2708\)/#\1/"
-sed /etc/modules -i -e "s/^#[[:space:]]*\(i2c[-_]dev\)/\1/"
-if ! grep -q "^i2c[-_]dev" /etc/modules; then
-	printf "i2c-dev\n" >> /etc/modules
+	sed $BLACKLIST -i -e "s/^\(blacklist[[:space:]]*spi[-_]bcm2708\)/#\1/"
+	dtparam spi=on
+	
+	echo -e "\nAktiviere I2C"
+	set_config_var dtparam=i2c_arm on $CONFIG &&
+	if ! [ -e $BLACKLIST ]; then
+		touch $BLACKLIST
+		fi
+	sed $BLACKLIST -i -e "s/^\(blacklist[[:space:]]*i2c[-_]bcm2708\)/#\1/"
+	sed /etc/modules -i -e "s/^#[[:space:]]*\(i2c[-_]dev\)/\1/"
+	if ! grep -q "^i2c[-_]dev" /etc/modules; then
+		printf "i2c-dev\n" >> /etc/modules
+	fi
+	dtparam i2c_arm=on
+	modprobe i2c-dev
+	
+	echo -e "\nAktiviere OneWire"
+	sed $CONFIG -i -e "s/^#dtoverlay=w1-gpio/dtoverlay=w1-gpio/"
+	if ! grep -q -E "^dtoverlay=w1-gpio" $CONFIG; then
+		printf "dtoverlay=w1-gpio\n" >> $CONFIG
+	fi
+	
+	cd /home/pi
+	git clone git://git.drogon.net/wiringPi
+	cd wiringPi
+	./build
+	
 fi
-dtparam i2c_arm=on
-modprobe i2c-dev
-
-echo -e "\nAktiviere OneWire"
-sed $CONFIG -i -e "s/^#dtoverlay=w1-gpio/dtoverlay=w1-gpio/"
-if ! grep -q -E "^dtoverlay=w1-gpio" $CONFIG; then
-	printf "dtoverlay=w1-gpio\n" >> $CONFIG
-fi
-
-cd /home/pi
-git clone git://git.drogon.net/wiringPi
-cd wiringPi
-./build
  
 disable_raspi_config_at_boot
 echo -e "\n*** Fertig ***\n\nStarte in 10 sek neu.."
