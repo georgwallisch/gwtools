@@ -1,6 +1,6 @@
 #!/bin/bash
 
-scriptname=backup_db.sh
+scriptname=db_backup.sh
 DB_USER=root
 BACKUP_PREFIX=db_
 BACKUP_PATH=$PWD
@@ -24,6 +24,10 @@ if [ -d "$1" ]; then
 fi
 
 echo -e "Backup path is set to $BACKUP_PATH\n"
+
+if [ ! -d $BACKUP_PATH ]; then
+	mkdir -p $BACKUP_PATH	
+fi
 
 while [ "$1" != '' ]
   do  	  
