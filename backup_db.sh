@@ -11,30 +11,42 @@
 # status: beta
 
 DB_USER=root
-BACKUP_PATH=/media/usbstick/backup/db
 BACKUP_PREFIX=db
 SQL_SUFFIX=sql
 BACKUP_SUFFIX=$SQL_SUFFIX.gz
 BACKUPS=5
+USAGE="USAGE: sudo $0 /path/to/backup Database1 [[Database2] ..]"
+SUCCESS_CNT=0
+ERROR_CNT=0
 
-echo -e "\n*******************************"
-echo -e "* DB Backup Script v1.1 *"
-echo -e "*******************************\n"
+echo -e "\n*************************"
+echo -e   "* DB Backup Script v1.2 *"
+echo -e   "*************************\n"
+echo -e "Starting backup on $(date)\n"
 
 if [ $(id -u) -ne 0 ]; then
-	echo -e "DB Backup script must be run as root. Try 'sudo ./$scriptname'\n"
-        exit 1
+	echo -e "DB Backup script must be run as root."
+	echo -e "${USAGE}\n"
+    exit 1
+fi
+
+BACKUP_PATH=$1
+shift
+echo -e "Backup path is set to ${BACKUP_PATH}"
+
+if [ ! -d "$BACKUP_PATH" ]; then
+	echo "${BACKUP_PATH} does not exist, creating.."
+	mkdir -p $BACKUP_PATH
+	if [ ! -d "$BACKUP_PATH" ]; then
+		echo "Could not create ${BACKUP_PATH}!"
+		exit 1
+	fi
 fi
 
 if [ $# -eq 0 ]; then
 	echo -e "No Database(s) specified!\n"
-	echo -e "Usage:"
-	echo -e "sudo ./$scriptname Database1 [Database2] [Database3] [Database4] [..]\n"
+	echo -e "${USAGE}\n"
 	exit 1
-fi
-
-if [ ! -d $BACKUP_PATH ]; then
-	mkdir -p $BACKUP_PATH	
 fi
 
 while [ $# -ne 0 ]  # ne = not equal
@@ -52,12 +64,15 @@ do
 		if [ -f $BACKUP_PATH/$SQLFILE ]; then
 			rm -f $BACKUP_PATH/$SQLFILE
 		fi
+		((ERROR_CNT++))
 	else
 		echo -e "Gzipping ${SQLFILE}.."
 		gzip -fq $BACKUP_PATH/$SQLFILE
 		if [ $? -ne 0 ]; then
 			echo -e "Error while gzipping ${SQLFILE}!"
+			((ERROR_CNT++))
 		else
+			((SUCCESS_CNT++))
 			counter=$BACKUPS
 			PREVFILE="${BACKUP_PREFIX}_${1}.${counter}.${BACKUP_SUFFIX}"
 			
@@ -84,5 +99,13 @@ do
 
 	shift       # next DB
 done
-echo -e "Finished DB Backup!\n"
+
+echo -e "Successfully finished ${SUCCESS_CNT} DB Backup(s) by $(date)!\n"
+
+if [ $ERROR_CNT -gt 0 ]; then
+	echo -e "But encountered ${ERROR_CNT} error(s)!\n"
+	exit 1
+fi
+
+exit 0
 

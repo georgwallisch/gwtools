@@ -1,2 +1,2 @@
 # WWW Backup
-45 4 * * * root /home/pi/gwtools/backup_www.sh >> /var/log/backup_www.log 2>&1
+45 4 * * * root /home/pi/gwtools/backup_www.sh /media/usbstick/backup/www >> /var/log/backup_www.log 2>&1
