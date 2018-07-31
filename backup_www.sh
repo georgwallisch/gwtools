@@ -59,7 +59,7 @@ BACKUP_PREFIX=${BACKUP_PREFIX////_}
 echo -e "Using Prefix ${BACKUP_PREFIX}"
 
 echo -e "Packing and compressing ${SRC_PATH} into ${BACKUP_PATH}/${FILE}"
-FILE="${BACKUP_PREFIX}_${1}.0.${BACKUP_SUFFIX}"
+FILE="${BACKUP_PREFIX}.0.${BACKUP_SUFFIX}"
 tar -czf $BACKUP_PATH/$FILE $SRC_PATH
 
 if [ $? -ne 0 ]; then
