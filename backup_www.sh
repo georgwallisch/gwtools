@@ -3,7 +3,7 @@
 # contact: gw@phpco.de
 # copyright: Copyright © 2018 by Georg Wallisch
 # credits: Georg Wallisch
-# date: 2018/07/28
+# date: 2018/07/31
 # deprecated: False
 # email: gw@phpco.de
 # license: GPL
@@ -16,7 +16,7 @@ BACKUPS=5
 USAGE="USAGE: sudo $0 /path/to/backup"
 
 echo -e "\n**************************"
-echo -e   "* WWW Backup Script v1.2 *"
+echo -e   "* WWW Backup Script v1.3 *"
 echo -e   "**************************\n"
 echo -e "Starting backup on $(date)\n"
 
@@ -70,9 +70,16 @@ else
 	counter=$BACKUPS
 	PREVFILE=$BACKUP_PREFIX.$counter.$BACKUP_SUFFIX
 
-	if [ -f "$BACKUP_PATH/$PREVFILE" ]; then
-		echo -e "Removing oldest file $PREVFILE"
-		rm -f $BACKUP_PATH/$PREVFILE
+	if [ -f $BACKUP_PATH/$PREVFILE ]; then
+		if [ -w $BACKUP_PATH/$PREVFILE ]; then
+			echo -e "Removing oldest file $PREVFILE"
+			rm -f $BACKUP_PATH/$PREVFILE
+			if [ $? -ne 0 ]; then
+				echo -e "Error while removing oldest file $PREVFILE!"
+			fi
+		else
+			echo -e "Cannot remove oldest file $PREVFILE! No write permission!"
+		fi				
 	fi
  
 	((counter--))
@@ -80,12 +87,18 @@ else
 	until [ $counter -lt 0 ]
 	do
 		FILE=$BACKUP_PREFIX.$counter.$BACKUP_SUFFIX
-		FP=""
-		if [ -f $BACKUP_PATH/$FILE ]; then
+		if [ -f  $BACKUP_PATH/$FILE ]; then
+			if [ -w $BACKUP_PATH/$FILE ]; then
+				echo -e "Moving $FILE to $PREVFILE"
 				mv  $BACKUP_PATH/$FILE $BACKUP_PATH/$PREVFILE
-			echo -e "Moving $FILE to $PREVFILE"
+				if [ $? -ne 0 ]; then
+					echo -e "Error while moving $FILE to $PREVFILE!"
+				fi
+			else
+				echo -e "Cannot move $FILE to $PREVFILE! No write permission!"
+			fi
 		fi
-		PREVFILE="$FILE"
+		PREVFILE=$FILE
 		((counter--))
 	done
 fi
