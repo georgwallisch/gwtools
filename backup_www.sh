@@ -90,7 +90,7 @@ else
 		if [ -f  $BACKUP_PATH/$FILE ]; then
 			if [ -w $BACKUP_PATH/$FILE ]; then
 				echo -e "Moving $FILE to $PREVFILE"
-				mv  $BACKUP_PATH/$FILE $BACKUP_PATH/$PREVFILE
+				mv -n $BACKUP_PATH/$FILE $BACKUP_PATH/$PREVFILE
 				if [ $? -ne 0 ]; then
 					echo -e "Error while moving $FILE to $PREVFILE!"
 				fi
