@@ -1,14 +1,26 @@
 #!/bin/bash
 
+echo -e "### gwTools Icinga-Config-Check-Skript ###"
+
 if [ $(id -u) -ne 0 ]; then
 	echo -e "Script must be run as root. Try 'sudo $0'\n"
 	exit 1
 fi
     
 if [ -f "/etc/icinga/icinga.cfg" ]; then
+	echo "Icinga v1 gefunden!"
+	echo "Prüfe Konfiguration..."
 	/usr/sbin/icinga -v /etc/icinga/icinga.cfg
 fi
 
 if [ -f "/etc/icinga2/icinga2.conf" ]; then
+	echo "Icinga2 gefunden!"
+	echo "Prüfe Konfiguration..."
 	icinga2 daemon -C
+fi
+
+if (( $? != 0 )); then
+	echo "Icinga-Konfiguration FEHLERHAFT!"
+else
+	echo "Icinga-Konfiguration OK"
 fi
