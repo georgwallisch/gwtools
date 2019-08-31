@@ -1,16 +1,44 @@
 #!/bin/bash
 
+echo -e "### gwTools Icinga-Reload-Skript ###"
+
 if [ $(id -u) -ne 0 ]; then
 	echo -e "Script must be run as root. Try 'sudo $0'\n"
 	exit 1
 fi
-    
+
+ICINGASERVICE=""
+ICINGAVERSION=0
+
 if [ -f "/etc/icinga/icinga.cfg" ]; then
-	service icinga reload
+	echo -e "Icinga v1 gefunden!"
+	ICINGASERVICE="icinga"
+	ICINGAVERSION=1
+elif [ -f "/etc/icinga2/icinga2.conf" ]; then
+	echo -e "Icinga2 gefunden!"
+	ICINGASERVICE="icinga2"
+	ICINGAVERSION=2
+else
+	echo -e "KEINE Icinga-Konfiguration gefunden!"
+	exit 1
 fi
 
-if [ -f "/etc/icinga2/icinga2.conf" ]; then
-	service icinga2 reload
+echo -e "Prüfe Konfiguration..."
+if (( $ICINGAVERSION == 1 )); then
+	/usr/sbin/icinga -v /etc/icinga/icinga.cfg
+elif (( $ICINGAVERSION == 2 )); then	
+	icinga2 daemon -C
 fi
 
+if (( $? != 0 )); then
+	echo -e "Icinga-Konfiguration FEHLERHAFT!"
+	exit 1
+else
+	echo -e "Icinga-Konfiguration OK"
+fi
 
+echo -e "Dienst $ICINGASERVICE lädt Konfiguration neu..."
+
+service $ICINGASERVICE reload
+
+echo -e "Fertig!"
