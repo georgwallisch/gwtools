@@ -1,10 +1,10 @@
 #!/bin/bash
 ### BEGIN INIT INFO
 # Provides:          varlog
-# Required-Start:    $local_fs
-# Required-Stop:     $local_fs
-# X-Start-Before:    $syslog
-# X-Stop-After:      $syslog
+# Required-Start:    $local_fs $remote_fs 
+# Required-Stop:     $local_fs $remote_fs 
+# X-Start-Before:    $syslog apache2
+# X-Stop-After:      $syslog apache2
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
 # Short-Description: Start/stop tmpfs logfile saving
@@ -13,44 +13,201 @@
 # varlog        This init.d script is used to start tmpfs logfile saving and restore.
 #
 
+VERSION="0.5 (07.09.2021)"
+DEFAULTSIZE=70M
+varlogSave=/var/save.log
+#varlogSave=/media/usbstick/log.save
 
-# varlogSave=/var/save.log/
-varlogSave=/media/usbstick/log.save/
-
-[ ! -d $varlogSave ] && mkdir -p $varlogSave
+[ ! -d $varlogSave ] && mkdir -p $varlogSave
 PATH=/sbin:/usr/sbin:/bin:/usr/bin
 
+VERBOSE=0
+RSPARAM="-a"
+CPPARAM="-Rpu"
+APACHE2=0
+
+if [ "$1" == "-v" ]; then
+	VERBOSE=1
+	RSPARAM="-va"
+	CPPARAM="-vRpu"
+	shift
+fi
+
+if [ "$2" == "-v" ]; then
+	VERBOSE=1	
+	RSPARAM="-va"
+	CPPARAM="-vRpu"
+fi
+
+if [ ! -d "$varlogSave" ]; then
+	if [ $VERBOSE -gt 0 ]; then
+		echo "${varlogSave} does not exist. Creating..." 
+	fi
+	mkdir -p $varlogSave
+	if [ ! -d "$varlogSave" ]; then
+		echo "ERROR: Could not create ${varlogSave} !"
+		exit 1
+	else
+		if [ $VERBOSE -gt 0 ]; then
+			echo "${varlogSave} created successfully." 
+		fi
+	fi
+fi
 
 function _save() {
+	if [ $VERBOSE -gt 0 ]; then
+		echo "*** Starting to save /var/log into ${varlogSave}" 
+	fi
 	if [ -x "$(which rsync)" ]; then
-		rsync -a --delete /var/log/ ${varlogSave}
+		if [ $VERBOSE -gt 0 ]; then
+			echo "*** Using rsync command" 
+		fi
+		rsync $RSPARAM --delete /var/log/ ${varlogSave}
 	else
-		cp -Rpu /var/log/* $varlogSave
+		if [ $VERBOSE -gt 0 ]; then
+			echo "*** Using cp command" 
+		fi
+		cp $CPPARAM /var/log/* ${varlogSave}/
 	fi
 	sync
+	if [ $VERBOSE -gt 0 ]; then
+		echo "*** Finished to save /var/log" 
+	fi
 }
 
-
-case $1 in
-	start)
-		echo "*** Starting tmpfs file restore: varlog."
-		if [ -z "$(grep /var/log /proc/mounts)" ]; then
-			echo "*** mounting /var/log"
-			_save
-			varlogsize=$(grep /var/log /etc/fstab|awk {'print $4'}|cut -d"=" -f2)
-			[ -z "$varlogsize" ] && varlogsize="70M"
-			mount -t tmpfs tmpfs /var/log -o defaults,size=$varlogsize
-			chmod 775 /var/log
+function _restore() {
+	if [ $VERBOSE -gt 0 ]; then
+		echo "*** Starting to restore /var/log from ${varlogSave}" 
+	fi
+	if [ -x "$(which rsync)" ]; then
+		if [ $VERBOSE -gt 0 ]; then
+			echo "*** Using rsync command" 
 		fi
-		cp -Rpu ${varlogSave}* /var/log/
-	;;
-	stop)
+		rsync $RSPARAM -u --delete ${varlogSave}/ /var/log
+	else
+		if [ $VERBOSE -gt 0 ]; then
+			echo "*** Using cp command" 
+		fi
+		cp $CPPARAM ${varlogSave}/* /var/log/
+	fi
+	sync
+	if [ $VERBOSE -gt 0 ]; then
+		echo "*** Finished to restore /var/log" 
+	fi
+}
+
+function _start() {
+	echo "*** Starting tmpfs file restore: varlog."
+	if [ -z "$(grep /var/log /proc/mounts)" ]; then
+		echo "*** mounting /var/log"
+		_save
+		#varlogsize=$(grep /var/log /etc/fstab|awk {'print $4'}|cut -d"=" -f2)
+		 varlogsize=$(grep -oE "/var/log.+size=[0-9]+[MmGgKk]" /etc/fstab | grep -oE "[0-9]+[MmGgKk]$")
+		[ -z "$varlogsize" ] && varlogsize=$DEFAULTSIZE
+		if [ $VERBOSE -gt 0 ]; then
+			echo "*** Size of tmpfs: {$varlogsize}" 
+		fi
+		mount -t tmpfs tmpfs /var/log -o defaults,size=$varlogsize
+		chmod 775 /var/log
+		_restore
+	else
+		echo "*** /var/log already mounted as tmpfs!"
+		if [ -n "$1" ]; then
+			echo "*** forcing restore from ${varlogSave}"
+			_restore
+		fi
+	fi	
+}
+
+function _stop() {
+	if [ -z "$(grep /var/log /proc/mounts)" ]; then
+		echo "*** /var/log already unmounted. nothing to do."
+	else
+		sync -f /var/log/kern.log
 		echo "*** Stopping tmpfs file saving: varlog."
 		_save
 		umount -f /var/log/
+		if [ -z "$(grep /var/log /proc/mounts)" ]; then
+			echo "*** /var/log unmounted successfully"
+		else
+			echo "*** ERROR: /var/log still mounted!"
+			if [ -n "$1" ]; then
+				echo "*** Try to unmount lazy."
+				umount -l /var/log/
+				if [ -z "$(grep /var/log /proc/mounts)" ]; then
+					echo "*** /var/log unmounted successfully FINALLY!"
+				else
+					echo "*** /var/log STILL mounted! This should not happen!"
+				fi
+			fi
+		fi
+	fi
+}
+
+function _stop_apache2() {
+	if [ $VERBOSE -gt 0 ]; then
+		echo "*** Checking if apache2 is running..." 
+	fi
+	APACHE2STATUS=$(service apache2 status)
+	if [[ $APACHE2STATUS == *"Active: active (running)"* ]]; then
+		echo "*** Apache2 is RUNNING! Stopping.." 
+		APACHE2=1
+		service apache2 graceful-stop
+	elif [[ $APACHE2STATUS == *"Active: failed"* ]]; then
+		echo "*** Apache2 failed but stopping it.." 
+		APACHE2=1
+		service apache2 stop
+	else
+		if [ $VERBOSE -gt 0 ]; then
+			echo "*** Apache2 is not running." 
+		fi
+	fi
+}
+
+function _start_apache2() {
+	if [ $APACHE2 > 0 ]; then
+		echo "*** Restarting Apache2..." 
+		service apache2 start
+	else
+		if [ $VERBOSE -gt 0 ]; then
+			echo "*** Apache2 was not running previously. Nothing to do." 
+		fi
+	fi
+}
+
+case $1 in
+	start)
+		_stop_apache2
+		_start ""
+		_start_apache2
+	;;
+	forcestart)
+		_stop_apache2
+		_start "force"	
+		_start_apache2
+	;;
+	stop)
+		_stop_apache2
+		_stop ""
+		_start_apache2
+	;;
+	forcestop)
+		_stop_apache2
+		_stop "force"
+		_start_apache2
+	;;
+	status)
+		if [ -z "$(grep /var/log /proc/mounts)" ]; then
+			echo "*** /var/log is NOT mounted as tmpfs!"
+		else
+			echo "*** /var/log seems to be mounted as tmpfs!"
+		fi
+	;;
+	version)
+		echo "Varlog Version is ${VERSION}"
 	;;
 	*)
-		echo "Usage: $0 {start|stop}"
+		echo "Usage: $0 {start|stop|status|forcestart|forcestop|version}"
 		exit 1
 	;;
 esac
