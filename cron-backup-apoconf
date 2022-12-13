@@ -1,0 +1,2 @@
+# WWW Backup
+30 2 * * * root /home/pi/gwtools/backup_dir.sh /home/pi/apo-conf /media/usbstick/backup/apo-conf >> /var/log/backup_www.log 2>&1

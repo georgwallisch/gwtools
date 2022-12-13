@@ -1,0 +1,4 @@
+# Icinga2 Backups
+40 */12 * * * root /home/pi/gwtools/db_backup.sh /media/usbstick/backup/icinga2/db icinga2 icingaweb >> /var/log/icinga_backup_db.log 2>&1
+45 3 * * * root /home/pi/gwtools/backup_dir.sh /etc/icinga2 /media/usbstick/backup/icinga2/config-backup >> /var/log/backup_www.log 2>&1
+#15 0 * * * root rsync -avb --delete --backup-dir=/media/usbstick/backup/icinga2/config-backup /etc/icinga2/ /media/usbstick/backup/icinga2/config >> /var/log/icinga2-config-backup.log 2>&1
