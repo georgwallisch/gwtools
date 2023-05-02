@@ -1,16 +1,54 @@
 #!/bin/bash
 
+echo -e "\n *********************"
+echo -e " * gw APT-GET runner *"
+echo -e " *********************\n"
+
 if [ $(id -u) -ne 0 ]; then
 	echo -e "Script must be run as root. Try 'sudo $0'\n"
 	exit 1
 fi
 
-apt-get update &&
-apt-get -y -f dist-upgrade &&
-while (( "$#")); do
+echo "Running UPDATE.."
+apt-get update
+if [ $? -gt 0 ]; then
+	echo "ERROR during apt-get update! Exiting.."
+	exit 1
+fi
+echo -e "done.\n"
+
+echo "Running DIST-UPGRADE.."
+apt-get -y -f dist-upgrade
+if [ $? -gt 0 ]; then
+	echo "ERROR during apt-get dist-upgrade! Exiting.."
+	exit 1
+fi
+echo -e "done.\n"
+
+while (("$#")); do
+	echo "Running INSTALL for $1.."
     apt-get -y install $1
+    if [ $? -gt 0 ]; then
+    	echo "ERROR during apt-get install for $1!"
+    fi
+	echo -e "done.\n"
     shift    
 done
-apt-get -y autoclean
-apt-get -y autoremove
 
+echo "Running AUTOCLEAN.."
+apt-get -y autoclean
+echo -e "done.\n"
+
+echo "Running AUTOREMOVE.."
+apt-get -y autoremove
+echo -e "done.\n"
+
+if [ -x "$(which checkrestart)" ]; then
+	echo "Finally running CHECKRESTART to see what needs to be restartet.."
+	checkrestart
+	echo -e "done.\n"
+else
+	echo "Skipping CHECKRESTART. Seems to be not available.."
+fi
+
+echo -e "** Finished APT-GET Runner! **\n"
