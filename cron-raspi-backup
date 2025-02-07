@@ -1,0 +1,2 @@
+# Raspi-backup
+55 3 * * * root /home/pi/raspi_backup.sh > /dev/nul 2>&1

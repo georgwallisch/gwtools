@@ -3,7 +3,7 @@
 # contact: gw@phpco.de
 # copyright: Copyright © 2018 by Georg Wallisch
 # credits: Georg Wallisch
-# date: 2018/07/31
+# date: 2025/02/07
 # deprecated: False
 # email: gw@phpco.de
 # license: GPL
@@ -14,13 +14,14 @@ DB_USER=root
 BACKUP_PREFIX=db
 SQL_SUFFIX=sql
 BACKUP_SUFFIX=$SQL_SUFFIX.gz
+COMPRESSOR=/usr/bin/gzip
 BACKUPS=5
 USAGE="USAGE: sudo $0 /path/to/backup Database1 [[Database2] ..]"
 SUCCESS_CNT=0
 ERROR_CNT=0
 
 echo -e "\n*************************"
-echo -e   "* DB Backup Script v1.3 *"
+echo -e   "* DB Backup Script v1.4 *"
 echo -e   "*************************\n"
 echo -e "Starting backup on $(date)\n"
 
@@ -72,10 +73,10 @@ do
 		fi
 		((ERROR_CNT++))
 	else
-		echo -e "Gzipping ${SQLFILE}.."
-		gzip -fq $BACKUP_PATH/$SQLFILE
+		echo -e "Compressing ${SQLFILE}.."
+		$COMPRESSOR -fq $BACKUP_PATH/$SQLFILE
 		if [ $? -ne 0 ]; then
-			echo -e "Error while gzipping ${SQLFILE}!"
+			echo -e "Error while compressing ${SQLFILE}!"
 			((ERROR_CNT++))
 		else
 			((SUCCESS_CNT++))

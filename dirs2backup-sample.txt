@@ -1,0 +1,5 @@
+/home/pi
+/var/www
+/etc
+/var/spool/cron
+/root

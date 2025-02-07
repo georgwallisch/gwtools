@@ -1,3 +1,0 @@
-# Backups
-45 */6 * * * root /home/pi/gwtools/backup_db.sh icinga2 icingaweb2 >> /var/log/backup_db.log 2>&1
-55 3 * * * root /home/pi/gwtools/backup_www.sh >> /var/log/backup_www.log 2>&1

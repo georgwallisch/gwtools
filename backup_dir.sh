@@ -1,22 +1,24 @@
 #!/bin/bash
 # author: Georg Wallisch
 # contact: gw@phpco.de
-# copyright: Copyright © 2022 by Georg Wallisch
+# copyright: Copyright © 2025 by Georg Wallisch
 # credits: Georg Wallisch
-# date: 2022/12/13
+# date: 2025/02/07
 # deprecated: False
 # email: gw@phpco.de
 # license: GPL
 # maintainer: Georg Wallisch
 # status: beta
 
-=/var/www
 BACKUP_SUFFIX=tar.gz
+COMPOSER=/usr/bin/tar
+COMPOSER_OPTS="-cpf -"
+COMPRESSOR=/usr/bin/gzip
 BACKUPS=5
 USAGE="USAGE: sudo $0 /path/to/source/dir /path/to/backup"
 
 echo -e "\n********************************"
-echo -e   "* Directory Backup Script v1.3 *"
+echo -e   "* Directory Backup Script v1.4 *"
 echo -e   "********************************\n"
 echo -e "Starting backup on $(date)\n"
 
@@ -60,9 +62,11 @@ BACKUP_PREFIX=${BACKUP_PREFIX:1}
 BACKUP_PREFIX=${BACKUP_PREFIX////_}
 echo -e "Using Prefix ${BACKUP_PREFIX}"
 
-echo -e "Packing and compressing ${SRC_PATH} into ${BACKUP_PATH}/${FILE}"
 FILE="${BACKUP_PREFIX}.0.${BACKUP_SUFFIX}"
-tar -czf $BACKUP_PATH/$FILE $SRC_PATH
+
+echo -e "Packing and compressing ${SRC_PATH} into ${BACKUP_PATH}/${FILE}"
+
+$COMPOSER $COMPOSER_OPTS $SRC_PATH | $COMPRESSOR > $BACKUP_PATH/$FILE
 
 if [ $? -ne 0 ]; then
 	echo -e "Error packing ${SRC_PATH}!"
