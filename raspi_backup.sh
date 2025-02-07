@@ -3,6 +3,9 @@ MOUNTPOINT=/mnt/backupdir
 BAKDIR="${MOUNTPOINT}/${HOSTNAME}"
 SCRIPTDIR=$(dirname $0)
 
+DIRFILE=/home/pi/dirs2backup.txt
+DBFILE=/home/pi/dbs2backup.txt
+
 echo -e "\n*************************"
 echo -e   "* Raspi Backup Script v1.1 *"
 echo -e   "*************************\n"
@@ -39,8 +42,26 @@ else
 	exit 1
 fi
 
-$SCRIPTDIR/backup_dirs.sh $BAKDIR /home/pi /var/www /etc /var/spool/cron /root
-$SCRIPTDIR/backup_db.sh $BAKDIR icinga2 icingaweb2
+SRC=""
+if [ -r $DIRFILE ]; then
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		SRC+=" $line"
+	done < "$DIRFILE"
+	$SCRIPTDIR/backup_dirs.sh $BAKDIR $SRC
+else
+	echo "Did not found $DIRFILE !"
+fi
+
+SRC=""
+if [ -r $DBFILE ]; then
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		SRC+=" $line"
+	done < "$DBFILE"
+	$SCRIPTDIR/backup_db.sh $BAKDIR $SRC
+else
+	echo "Did not found $DBFILE !"
+
+fi
 
 echo "Unmounting $MOUNTPOINT .."
 /bin/umount $MOUNTPOINT
