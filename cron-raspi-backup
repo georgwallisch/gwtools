@@ -1,2 +1,2 @@
 # Raspi-backup
-55 3 * * * root /home/pi/raspi_backup.sh > /dev/nul 2>&1
+55 3 * * * root /home/pi/gwtools/raspi_backup.sh >> /var/log/raspi-backup/backup.log 2>&1
