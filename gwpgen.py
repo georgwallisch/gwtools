@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-pwgen.py – kryptographisch saubere Passworterzeugung
+gwpgen.py – entropy-driven, cryptographically sound password generator
+
+Part of the gwtools project:
+https://github.com/georgwallisch/gwtools
+
+Copyright (c) 2026 Georg Wallisch
+License: MIT
 """
 
 import argparse
@@ -16,10 +22,13 @@ from typing import List
 # ----------------------------
 
 ENTROPY_PRESETS = {
+    "weak": 50,
     "good": 70,
     "strong": 100,
     "stronger": 125,
-    "paranoid": 256,
+    "tough": 150,    
+    "paranoid": 200,
+    "insane": 256    
 }
 
 UPPER = string.ascii_uppercase
@@ -37,16 +46,9 @@ SYMBOLS = "!$%&(),.-;:#+"
 def rand_index(k: int, bits: int, mask: int) -> int:
     """Ziehe einen gleichverteilten Index < k mittels Rejection Sampling."""
     while True:
-        b = os.urandom(1)[0] & mask
+        b = int.from_bytes(os.urandom(1), "big") & mask
         if b < k:
             return b
-
-
-#def secure_shuffle(items: List[str]) -> None:
-#    """Fisher-Yates-Shuffle mit os.urandom()."""
-#    for i in range(len(items) - 1, 0, -1):
-#        j = os.urandom(1)[0] % (i + 1)
-#        items[i], items[j] = items[j], items[i]
 
 def secure_shuffle(items: List[str]) -> None:
     for i in range(len(items) - 1, 0, -1):
@@ -67,23 +69,48 @@ def random_char_from(alphabet: str, bits: int, mask: int) -> str:
 
 def build_password(alphabet: str,
                    classes: List[str],
+                   target_length: int,
                    target_entropy: int,
                    group: int,
-                   separator: str) -> str:
+                   separator: str,
+                   pad_group: bool) -> str:
 
     k = len(alphabet)
+    min_length = len(classes)
     bits = math.ceil(math.log2(k))
     mask = (1 << bits) - 1
     entropy_per_char = math.log2(k)
 
-    length = math.ceil(target_entropy / entropy_per_char)
+    if target_length:
+        length = target_length
+    elif target_entropy:
+        length = math.ceil(target_entropy / entropy_per_char)
+    else:
+        raise ValueError("Neither length nor target entropy given")     
+        
+    remainder = 0
+    if group > 0 and pad_group:
+        remainder = length % group
+        if remainder != 0:
+            length += group - remainder
+            
+    if length < min_length:
+        raise ValueError("Length too short for selected character classes")
+        
+    entropy = length * math.log2(k) 
 
     logging.debug("Alphabetgröße: %d", k)
     logging.debug("Bits pro Zeichen: %d", bits)
     logging.debug("Entropie/Z.: %.2f", entropy_per_char)
-    logging.debug("Zielentropie: %d Bit", target_entropy)
+    if target_length:
+        logging.debug("Ziellänge: %d", target_length)
+    if target_entropy:
+        logging.debug("Zielentropie: %d Bit", target_entropy)
     logging.debug("Berechnete Länge: %d", length)
-
+    if remainder != 0:
+        logging.debug("Länge wurde um %d Zeichen erweitert zum Auffüllen", (group-remainder))
+    logging.debug("Berechnete Entropie: %.2f Bit", entropy)
+        
     password_chars: List[str] = []
 
     # enforce classes
@@ -101,6 +128,8 @@ def build_password(alphabet: str,
         pw = separator.join(
             pw[i:i + group] for i in range(0, len(pw), group)
         )
+        logging.debug("Gesamtlänge mit Gruppierungszeichen: %d", len(pw))       
+    
 
     return pw
 
@@ -114,19 +143,15 @@ def main() -> None:
         parser = argparse.ArgumentParser(
             description="Kryptographisch saubere Passworterzeugung"
         )
-
-        preset = parser.add_mutually_exclusive_group(required=False)
-        preset.add_argument("--good", action="store_const",
-                            const="good", dest="preset")
-        preset.add_argument("--strong", action="store_const",
-                            const="strong", dest="preset")
-        preset.add_argument("--stronger", action="store_const",
-                            const="stronger", dest="preset")
-        preset.add_argument("--paranoid", action="store_const",
-                            const="paranoid", dest="preset")
-
-        parser.add_argument("-b", "--entropy-bits", type=int)
-
+        
+        length_group = parser.add_mutually_exclusive_group(required=True)
+        length_group.add_argument("-b", "--entropy-bits", type=int)
+        length_group.add_argument("-L", "--length", type=int)
+        
+        for preset, bits in ENTROPY_PRESETS.items():
+            length_group.add_argument(f"--{preset}", action="store_const",
+                            const=preset, dest="preset", help=f"Entropy preset: {bits} bits")
+        
         parser.add_argument("-a","--alphanum", action="store_true",
                             help="Alphanumerische Zeichen A–Z, a-z, 0-9")
         parser.add_argument("-u","--upper", action="store_true",
@@ -146,6 +171,9 @@ def main() -> None:
                             help="Gruppierung (z.B. immer 4 Zeichen zu einem Block xxxx-xxxx-xxxx)")
         parser.add_argument("-s","--separator", default="-",
                             help="Trennzeichen für Gruppierung")
+        parser.add_argument("-p","--pad-group", action="store_true",
+                            help="Bei Gruppierung die letzte Gruppe auf gleiche Länge auffüllen")
+        
         parser.add_argument("-n","--no-newline", action="store_true",
                             help="Kein Zeilenumbruch bei der Ausgabe (für Piping)")
 
@@ -184,20 +212,28 @@ def main() -> None:
 
         if not alphabet:
             parser.error("Mindestens eine Zeichenklasse auswählen")
-
-        if args.entropy_bits:
-            target_entropy = args.entropy_bits
-        elif args.preset:
-            target_entropy = ENTROPY_PRESETS[args.preset]
-        else:
-            parser.error("Preset oder --entropy-bits angeben")
+            
+        length = None
+        entropy = None
+            
+        if args.length:
+            length = args.length
+        else:   
+            if args.entropy_bits:
+                entropy = args.entropy_bits
+            elif args.preset:
+                entropy = ENTROPY_PRESETS[args.preset]
+            else:
+                parser.error("Entropy-Preset, --entropy-bits oder Länge angeben!")
 
         password = build_password(
             alphabet=alphabet,
             classes=classes,
-            target_entropy=target_entropy,
+            target_length=length,
+            target_entropy=entropy,
             group=args.group,
             separator=args.separator,
+            pad_group=args.pad_group
         )
 
         end = "\n"
@@ -207,6 +243,9 @@ def main() -> None:
 
         print(password, end=end)
 
+    except ValueError as e:
+        parser.error(str(e))
+    
     except Exception:
         logging.exception("Unhandled exception in main")
         raise
