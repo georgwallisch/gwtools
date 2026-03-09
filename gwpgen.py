@@ -37,6 +37,7 @@ DIGITS = string.digits
 HEXLOW = DIGITS + LOWER[0:6]
 HEXUP = DIGITS + UPPER[0:6]
 SYMBOLS = "!$%&(),.-;:#+"
+urandom_bytes_used = 0
 
 
 # ----------------------------
@@ -46,7 +47,7 @@ SYMBOLS = "!$%&(),.-;:#+"
 def rand_index(k: int, bits: int, mask: int) -> int:
     """Ziehe einen gleichverteilten Index < k mittels Rejection Sampling."""
     while True:
-        b = int.from_bytes(os.urandom(1), "big") & mask
+        b = int.from_bytes(random_bytes(1), "big") & mask
         if b < k:
             return b
 
@@ -57,28 +58,38 @@ def secure_shuffle(items: List[str]) -> None:
         j = rand_index(i + 1, bits, mask)
         items[i], items[j] = items[j], items[i]
 
-
 def random_char_from(alphabet: str, bits: int, mask: int) -> str:
     idx = rand_index(len(alphabet), bits, mask)
     return alphabet[idx]
-
+    
+def random_bytes(n):
+    global urandom_bytes_used
+    urandom_bytes_used += n
+    return os.urandom(n)
 
 # ----------------------------
 # Hauptlogik
 # ----------------------------
 
-def build_password(alphabet: str,
+def build_passwords(alphabet: str,
                    classes: List[str],
                    target_length: int,
                    target_entropy: int,
+                   enforce_classes: bool,
                    group: int,
                    separator: str,
-                   pad_group: bool) -> str:
+                   pad_group: bool,
+                   number: int) -> List[str]:
+
+    if group > 0 and separator in alphabet:
+        alphabet = alphabet.replace(separator, "")
+
+    alphabet = "".join(sorted(set(alphabet)))
 
     k = len(alphabet)
     min_length = len(classes)
     bits = math.ceil(math.log2(k))
-    mask = (1 << bits) - 1
+
     entropy_per_char = math.log2(k)
 
     if target_length:
@@ -99,23 +110,50 @@ def build_password(alphabet: str,
         
     entropy = length * math.log2(k) 
 
-    logging.debug("Alphabetgröße: %d", k)
-    logging.debug("Bits pro Zeichen: %d", bits)
-    logging.debug("Entropie/Z.: %.2f", entropy_per_char)
+    logging.debug("Alphabet size: %d", k)
+    logging.debug("Bits per character: %d", bits)
+    logging.debug("Entropy per char: %.2f", entropy_per_char)
     if target_length:
-        logging.debug("Ziellänge: %d", target_length)
+        logging.debug("Target length: %d", target_length)
     if target_entropy:
-        logging.debug("Zielentropie: %d Bit", target_entropy)
-    logging.debug("Berechnete Länge: %d", length)
+        logging.debug("Target entropy: %d bits", target_entropy)
+    logging.debug("Calculated length: %d", length)
     if remainder != 0:
-        logging.debug("Länge wurde um %d Zeichen erweitert zum Auffüllen", (group-remainder))
-    logging.debug("Berechnete Entropie: %.2f Bit", entropy)
+        logging.debug("Added %d more characters to pad group", (group-remainder))
+    logging.debug("Calculated entropy: %.2f bits", entropy)
+       
+    passwords: List[str] = []
+    
+    for _ in range(number):
+        passwords.append(build_password(alphabet=alphabet,
+                                        classes=classes,
+                                        bits=bits,
+                                        length=length,
+                                        enforce_classes=enforce_classes,
+                                        group=group,
+                                        separator=separator))
+    
+    logging.debug("Total grouped length: %d", len(passwords[0]))
+    logging.debug("Total entropy consumed: %d bytes", urandom_bytes_used)
+    
+    return passwords
+    
+    
+def build_password(alphabet: str,
+                   classes: List[str],
+                   bits: int,
+                   length: int,
+                   enforce_classes: bool,
+                   group: int,
+                   separator: str) -> str:
         
+    mask = (1 << bits) - 1
     password_chars: List[str] = []
 
     # enforce classes
-    for cls in classes:
-        password_chars.append(random_char_from(cls, bits, mask))
+    if enforce_classes:
+        for cls in classes:
+            password_chars.append(random_char_from(cls, bits, mask))
 
     while len(password_chars) < length:
         password_chars.append(random_char_from(alphabet, bits, mask))
@@ -128,10 +166,27 @@ def build_password(alphabet: str,
         pw = separator.join(
             pw[i:i + group] for i in range(0, len(pw), group)
         )
-        logging.debug("Gesamtlänge mit Gruppierungszeichen: %d", len(pw))       
     
-
     return pw
+    
+def write_passwords(passwords, args):
+    
+    end = "\n"
+
+    if args.no_newline:
+        end = ""
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            for pw in passwords:
+                f.write(pw + end)
+
+                if args.tee:
+                    print(pw, end=end)
+
+    else:
+        for pw in passwords:
+            print(pw, end=end)
 
 
 # ----------------------------
@@ -141,7 +196,7 @@ def build_password(alphabet: str,
 def main() -> None:
     try:
         parser = argparse.ArgumentParser(
-            description="Kryptographisch saubere Passworterzeugung"
+            description="Cryptographically sound password generator"
         )
         
         length_group = parser.add_mutually_exclusive_group(required=True)
@@ -153,32 +208,46 @@ def main() -> None:
                             const=preset, dest="preset", help=f"Entropy preset: {bits} bits")
         
         parser.add_argument("-a","--alphanum", action="store_true",
-                            help="Alphanumerische Zeichen A–Z, a-z, 0-9")
+                            help="Alphanumeric characters A–Z, a-z, 0-9")
         parser.add_argument("-u","--upper", action="store_true",
-                            help="Großbuchstaben A–Z")
+                            help="Upppercase letters (A–Z)")
         parser.add_argument("-l","--lower", action="store_true",
-                            help="Kleinbuchstaben a–z")
+                            help="Lowercase letters (a–z)")
         parser.add_argument("-d","--digits", action="store_true",
-                            help="Ziffern 0–9")
-        parser.add_argument("-m","--symbols", action="store_true",
-                            help="Sonderzeichen")
+                            help="Digits (0–9)")
+        parser.add_argument("-m", "--symbols", nargs="?", const=SYMBOLS,
+                            help="Use symbols (optional custom alphabet)")
         parser.add_argument("-x","--hex-lower", action="store_true",
-                            help="Hexadezimale Ziffern mit Kleinbuchstaben (0-9a-f)")
+                            help="Lowercase hexadecimal characters (0-9a-f)")
         parser.add_argument("-X","--hex-upper", action="store_true",
-                            help="Hexadezimale Ziffern mit Großbuchstaben (0-9A-F)")
+                            help="Uppercase hexadecimal characters (0-9A-F)")
+        
+        parser.add_argument("-E", "--enforce-classes", action="store_true", default=True,
+                            help="Enforce at least one character per character class (default)")
+        parser.add_argument("--no-enforce-classes", action="store_false", dest="enforce_classes",
+                            help="Do not enforce at least one character per character class")
 
         parser.add_argument("-g", "--group", type=int, default=0,
-                            help="Gruppierung (z.B. immer 4 Zeichen zu einem Block xxxx-xxxx-xxxx)")
+                            help="Group characters to blocks")
         parser.add_argument("-s","--separator", default="-",
-                            help="Trennzeichen für Gruppierung")
+                            help="Group separator")
         parser.add_argument("-p","--pad-group", action="store_true",
-                            help="Bei Gruppierung die letzte Gruppe auf gleiche Länge auffüllen")
-        
+                            help="Pad last group to group length")
+        parser.add_argument("-o", "--output",
+                            help="Write generated password to file")
+        parser.add_argument("--tee", action="store_true",
+                            help="Write password both to stdout and output file")
+
+        parser.add_argument("-N", "--number", type=int, default=1,
+                            help="How many passwords to generate")
+
         parser.add_argument("-n","--no-newline", action="store_true",
-                            help="Kein Zeilenumbruch bei der Ausgabe (für Piping)")
+                            help="No newline at output")
 
         parser.add_argument("-v", "--verbose", action="store_true",
-                            help="Debug-Ausgaben")
+                            help="Verbose output")
+        
+        parser.add_argument("-V", "--version", action="version", version="gwpgen 1.0")
 
         args = parser.parse_args()
 
@@ -207,11 +276,11 @@ def main() -> None:
                 classes.append(DIGITS)
                 alphabet += DIGITS
         if args.symbols:
-            classes.append(SYMBOLS)
-            alphabet += SYMBOLS
+            classes.append(args.symbols)
+            alphabet += args.symbols
 
         if not alphabet:
-            parser.error("Mindestens eine Zeichenklasse auswählen")
+            parser.error("Select at least one character class")
             
         length = None
         entropy = None
@@ -224,25 +293,22 @@ def main() -> None:
             elif args.preset:
                 entropy = ENTROPY_PRESETS[args.preset]
             else:
-                parser.error("Entropy-Preset, --entropy-bits oder Länge angeben!")
-
-        password = build_password(
+                parser.error("Use entropy preset or set --entropy-bits or --length!")
+                
+        passwords = build_passwords(
             alphabet=alphabet,
             classes=classes,
             target_length=length,
             target_entropy=entropy,
+            enforce_classes=args.enforce_classes,
             group=args.group,
             separator=args.separator,
-            pad_group=args.pad_group
+            pad_group=args.pad_group,
+            number=args.number
         )
 
-        end = "\n"
-
-        if args.no_newline:
-            end = ""
-
-        print(password, end=end)
-
+        write_passwords(passwords, args)
+        
     except ValueError as e:
         parser.error(str(e))
     
