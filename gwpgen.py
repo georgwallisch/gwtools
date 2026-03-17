@@ -32,7 +32,7 @@ ENTROPY_PRESETS = {
 }
 
 PROGNAME = "gwpgen"
-VERSION = "1.1"
+VERSION = "1.2"
 
 UPPER = string.ascii_uppercase
 LOWER = string.ascii_lowercase
@@ -120,6 +120,7 @@ def build_passwords(alphabet: str,
     entropy = length * entropy_per_char
         
     logging.debug("Alphabet size: %d", k)
+    logging.debug("Alphabet: %s", alphabet)
     logging.debug("RNG bits per character: %d", bits)
     logging.debug("Entropy per char: %.2f", entropy_per_char)
     if target_length:
@@ -129,7 +130,7 @@ def build_passwords(alphabet: str,
     logging.debug("Calculated length: %d", length)
     if remainder != 0:
         logging.debug("Added %d characters to pad the final group", (group-remainder))
-    logging.debug("Calculated entropy: %.2f bits", entropy)
+    logging.debug("Theoretical entropy: %.2f bits", entropy)
        
     passwords: List[str] = []
     
@@ -179,13 +180,26 @@ def build_password(alphabet: str,
     return pw
     
 def format_wifi(ssid:str, pw:str, hidden:bool):
+    
+    ssid_escaped = escape_wifi_string(ssid)
+    pw_escaped = escape_wifi_string(pw)
 
-    wifi = f"WIFI:T:WPA;S:{ssid};P:{pw};"
+    wifi = f"WIFI:T:WPA;S:{ssid_escaped};P:{pw_escaped};"
     if hidden:
         wifi += "HIDDEN:true;"
     wifi += ";"
 
     return wifi
+    
+def escape_wifi_string(s: str) -> str:
+    """Escape special characters for WiFi QR code format."""
+    return (
+        s.replace("\\", "\\\\")
+         .replace(";", "\\;")
+         .replace(",", "\\,")
+         .replace(":", "\\:")
+         .replace('"', '\\"')
+    )
     
 def write_passwords(passwords, args):
     
@@ -211,6 +225,12 @@ def write_passwords(passwords, args):
         if not f or args.tee:
             print(pw, end=end)
 
+def read_passwords(path):
+    if path == "-":
+        return [line.strip() for line in sys.stdin if line.strip()]
+    else:
+        with open(path, "r", encoding="utf-8") as f:
+            return [line.strip() for line in f if line.strip()]
     
 
 
@@ -260,6 +280,10 @@ def main() -> None:
                             help="Pad the last group to full group length")
         parser.add_argument("-o", "--output",
                             help="Write generated password(s) to file")
+        
+        length_group.add_argument("-i", "--input", metavar="FILE",
+                            help="Read existing password(s) from file or '-' for stdin")
+        
         parser.add_argument("--tee", action="store_true",
                             help="Write password(s) both to stdout and output file")
 
@@ -269,7 +293,7 @@ def main() -> None:
                             help="Output password as WiFi QR string for given SSID")
         
         wifi_group.add_argument("--wifi-hidden", metavar="SSID",
-                            help="Output password as WiFi QR string for given SSID and set hidden")
+                            help="Output password as WiFi QR string for given SSID and set hidden")        
 
         parser.add_argument("-N", "--number", type=int, default=1,
                             help="Generate N passwords (default: 1)")
@@ -292,72 +316,80 @@ def main() -> None:
             format="%(message)s"
         )
         
-        if args.number < 1:
-            parser.error("--number must be >= 1")
-
-        classes: List[str] = []
-        alphabet = ""
-
-        if args.hex_lower:
-            classes.append(HEXLOW)
-            alphabet += HEXLOW
-        elif args.hex_upper:
-            classes.append(HEXUP)
-            alphabet += HEXUP
+        if args.input:
+           passwords = read_passwords(args.input)
+                   
         else:
-            if args.upper or args.alphanum:
-                classes.append(UPPER)
-                alphabet += UPPER
-            if args.lower or args.alphanum:
-                classes.append(LOWER)
-                alphabet += LOWER
-            if args.digits or args.alphanum:
-                classes.append(DIGITS)
-                alphabet += DIGITS
-        if args.symbols is not None:
-            if args.symbols == "":
-                parser.error("Symbol alphabet must not be empty")
-            classes.append(args.symbols)
-            alphabet += args.symbols
-
-        if not alphabet:
-            parser.error("Select at least one character class")
-            
-        length = None
-        entropy = None
-            
-        if args.length:
-            length = args.length
-        else:   
-            if args.entropy_bits:
-                entropy = args.entropy_bits
-            elif args.preset:
-                entropy = ENTROPY_PRESETS[args.preset]
-            else:
-                parser.error("Use an entropy preset, or specify --entropy-bits or --length")
- 
-        if not args.no_limits:
-            
-            if entropy and entropy > MAX_ENTROPY:
-                parser.error(f"Entropy limit exceeded (max {MAX_ENTROPY} bits). Use --no-limits to override.")
-        
-            if length and length > MAX_LENGTH:
-                parser.error(f"Length limit exceeded (max {MAX_LENGTH}). Use --no-limits to override.")
+           
+            if args.number < 1:
+                parser.error("--number must be >= 1")
                 
-            if args.number > MAX_NUMBER:
-                parser.error(f"Number limit exceeded (max {MAX_NUMBER}). Use --no-limits to override.")
+            if args.number > 1 and (args.wifi or args.wifi_hidden):
+                parser.error("--wifi options cannot be used with --number > 1")
+    
+            classes: List[str] = []
+            alphabet = ""
+    
+            if args.hex_lower:
+                classes.append(HEXLOW)
+                alphabet += HEXLOW
+            elif args.hex_upper:
+                classes.append(HEXUP)
+                alphabet += HEXUP
+            else:
+                if args.upper or args.alphanum:
+                    classes.append(UPPER)
+                    alphabet += UPPER
+                if args.lower or args.alphanum:
+                    classes.append(LOWER)
+                    alphabet += LOWER
+                if args.digits or args.alphanum:
+                    classes.append(DIGITS)
+                    alphabet += DIGITS
+            if args.symbols is not None:
+                if args.symbols == "":
+                    parser.error("Symbol alphabet must not be empty")
+                classes.append(args.symbols)
+                alphabet += args.symbols
+    
+            if not alphabet:
+                parser.error("Select at least one character class")
+                
+            length = None
+            entropy = None
+                
+            if args.length:
+                length = args.length
+            else:
+                if args.entropy_bits:
+                    entropy = args.entropy_bits
+                elif args.preset:
+                    entropy = ENTROPY_PRESETS[args.preset]
+                else:
+                    parser.error("Use an entropy preset, or specify --entropy-bits or --length")
+     
+            if not args.no_limits:
+                
+                if entropy and entropy > MAX_ENTROPY:
+                    parser.error(f"Entropy limit exceeded (max {MAX_ENTROPY} bits). Use --no-limits to override.")
+            
+                if length and length > MAX_LENGTH:
+                    parser.error(f"Length limit exceeded (max {MAX_LENGTH}). Use --no-limits to override.")
                     
-        passwords = build_passwords(
-            alphabet=alphabet,
-            classes=classes,
-            target_length=length,
-            target_entropy=entropy,
-            enforce_classes=args.enforce_classes,
-            group=args.group,
-            separator=args.separator,
-            pad_group=args.pad_group,
-            number=args.number
-        )
+                if args.number > MAX_NUMBER:
+                    parser.error(f"Number limit exceeded (max {MAX_NUMBER}). Use --no-limits to override.")
+
+            passwords = build_passwords(
+                alphabet=alphabet,
+                classes=classes,
+                target_length=length,
+                target_entropy=entropy,
+                enforce_classes=args.enforce_classes,
+                group=args.group,
+                separator=args.separator,
+                pad_group=args.pad_group,
+                number=args.number
+            )
 
         write_passwords(passwords, args)
         
