@@ -13,6 +13,7 @@ import argparse
 import logging
 import math
 import os
+import sys
 import string
 from typing import List
 
@@ -202,36 +203,45 @@ def escape_wifi_string(s: str) -> str:
     )
     
 def write_passwords(passwords, args):
-    
-    end = "\n"
 
-    if args.no_newline:
-        end = ""
-        
-    f = False
+    end = "" if args.no_newline else "\n"
+
+    f = None
 
     if args.output:
-        f = open(args.output, "w", encoding="utf-8")
-        
-    for pw in passwords:
-        if args.wifi:
-            pw = format_wifi(ssid=args.wifi, pw=pw, hidden=False)
-        elif args.wifi_hidden:
-            pw = format_wifi(ssid=args.wifi, pw=pw, hidden=True)
-            
-        if f:   
-            f.write(pw + end)
+        if os.path.exists(args.output) and not args.force:
+            raise ValueError(f"File '{args.output}' already exists (use --force to overwrite)")
+        try:
+            f = open(args.output, "w", encoding="utf-8")
+        except OSError as e:
+            raise ValueError(f"Cannot write to '{args.output}': {e.strerror}")
 
-        if not f or args.tee:
-            print(pw, end=end)
+    try:
+        for pw in passwords:
+            if args.wifi:
+                pw = format_wifi(ssid=args.wifi, pw=pw, hidden=False)
+            elif args.wifi_hidden:
+                pw = format_wifi(ssid=args.wifi, pw=pw, hidden=True)
+
+            if f:
+                f.write(pw + end)
+
+            if not f or args.tee:
+                print(pw, end=end)
+
+    finally:
+        if f:
+            f.close()
 
 def read_passwords(path):
     if path == "-":
         return [line.strip() for line in sys.stdin if line.strip()]
     else:
-        with open(path, "r", encoding="utf-8") as f:
-            return [line.strip() for line in f if line.strip()]
-    
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return [line.strip() for line in f if line.strip()]
+        except OSError as e:
+            raise ValueError(f"Cannot read from '{path}': {e.strerror}")
 
 
 # ----------------------------
@@ -244,7 +254,7 @@ def main() -> None:
             description="Cryptographically sound password generator"
         )
         
-        length_group = parser.add_mutually_exclusive_group(required=True)
+        length_group = parser.add_mutually_exclusive_group()
         length_group.add_argument("-b", "--entropy-bits", type=int)
         length_group.add_argument("-L", "--length", type=int)
         
@@ -266,11 +276,10 @@ def main() -> None:
                             help="Lowercase hexadecimal characters (0-9a-f)")
         parser.add_argument("-X","--hex-upper", action="store_true",
                             help="Uppercase hexadecimal characters (0-9A-F)")
-        
-        parser.add_argument("-E", "--enforce-classes", action="store_true", default=True,
-                            help="Ensure at least one character from each selected class (default)")
+
         parser.add_argument("--no-enforce-classes", action="store_false", dest="enforce_classes",
                             help="Do not enforce at least one character per class")
+        parser.set_defaults(enforce_classes=True)
 
         parser.add_argument("-g", "--group", type=int, default=0,
                             help="Group characters into blocks")
@@ -279,9 +288,10 @@ def main() -> None:
         parser.add_argument("-p","--pad-group", action="store_true",
                             help="Pad the last group to full group length")
         parser.add_argument("-o", "--output",
-                            help="Write generated password(s) to file")
-        
-        length_group.add_argument("-i", "--input", metavar="FILE",
+                            help="Write generated password(s) to a file")
+        parser.add_argument("--force", action="store_true",
+                            help="Force overwrite existing file")
+        parser.add_argument("-i", "--input", metavar="FILE",
                             help="Read existing password(s) from file or '-' for stdin")
         
         parser.add_argument("--tee", action="store_true",
@@ -299,7 +309,7 @@ def main() -> None:
                             help="Generate N passwords (default: 1)")
 
         parser.add_argument("-n","--no-newline", action="store_true",
-                            help="Do not append a newline to output")
+                            help="Do not append a trailing newline")
         
         parser.add_argument("--no-limits", action="store_true",
                             help="Disable safety limits for entropy and password length")
@@ -320,6 +330,9 @@ def main() -> None:
            passwords = read_passwords(args.input)
                    
         else:
+            
+            if not (args.length or args.entropy_bits or args.preset):
+                parser.error("Must specify --length, --entropy-bits, or a preset")
            
             if args.number < 1:
                 parser.error("--number must be >= 1")
