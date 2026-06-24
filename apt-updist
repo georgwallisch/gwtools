@@ -1,50 +1,72 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+REBOOT=0
+FORCEREBOOT=0
+SLEEPTIME=10
+
+while getopts "rR" opt; do
+	case "$opt" in
+		r) REBOOT=1 ;;
+		R) FORCEREBOOT=1 ;;
+	esac
+done
+
+shift $((OPTIND-1))
 
 echo -e "\n *********************"
 echo -e " * gw APT-GET runner *"
 echo -e " *********************\n"
 
-if [ $(id -u) -ne 0 ]; then
-	echo -e "Script must be run as root. Try 'sudo $0'\n"
+if (( EUID != 0 )); then
+	echo "Script must be run as root. Try 'sudo $0'"
 	exit 1
 fi
 
+if (( FORCEREBOOT )); then
+	echo -e "FORCE REBOOT option is set! Will reboot when finished.\n"
+elif (( REBOOT )); then
+	echo -e "REBOOT option is set! Will reboot if necessary when finished.\n"
+fi
+
 echo "Running UPDATE.."
-apt-get update
-if [ $? -gt 0 ]; then
+if ! apt-get update; then
 	echo "ERROR during apt-get update! Exiting.."
 	exit 1
 fi
 echo -e "done.\n"
 
-echo "Running DIST-UPGRADE.."
-apt-get -y -f dist-upgrade
-if [ $? -gt 0 ]; then
-	echo "ERROR during apt-get dist-upgrade! Exiting.."
+echo "Running FULL UPGRADE.."
+
+if ! apt-get -y full-upgrade; then
+	echo "ERROR during apt-get full-upgrade! Exiting.."
 	exit 1
 fi
 echo -e "done.\n"
 
-while (("$#")); do
-	echo "Running INSTALL for $1.."
-    apt-get -y install $1
-    if [ $? -gt 0 ]; then
-    	echo "ERROR during apt-get install for $1!"
-    fi
-	echo -e "done.\n"
-    shift    
-done
+if [[ "$#" -gt 0 ]]; then
+	printf 'Running INSTALL for: %s\n' "$*"
+	if ! apt-get -y install "$@"; then
+		echo "ERROR during apt-get install!"
+		echo -e "failed.\n"
+	else
+		echo -e "done.\n"
+	fi
+fi	
 
 echo "Running AUTOCLEAN.."
-apt-get -y autoclean
+if ! apt-get -y autoclean; then
+	echo "ERROR during autoclean!"
+fi
 echo -e "done.\n"
 
 echo "Running AUTOREMOVE.."
-apt-get -y autoremove
+if ! apt-get -y autoremove; then
+	echo "ERROR during autoremove!"
+fi
 echo -e "done.\n"
 
-if [ -x "$(which checkrestart)" ]; then
-	echo "Finally running CHECKRESTART to see what needs to be restartet.."
+if command -v checkrestart >/dev/null 2>&1; then
+	echo "Finally running CHECKRESTART to see what needs to be restarted.."
 	checkrestart
 	echo -e "done.\n"
 else
@@ -52,3 +74,26 @@ else
 fi
 
 echo -e "** Finished APT-GET Runner! **\n"
+
+DOREBOOT=0
+MSG="Have a good day!"
+
+if (( FORCEREBOOT )); then
+	MSG="Rebooting in ${SLEEPTIME} seconds..."
+	DOREBOOT=1	
+elif (( REBOOT )); then
+	if [[ -f /var/run/reboot-required ]]; then
+		MSG="System reboot required. Rebooting in ${SLEEPTIME} seconds..."
+		DOREBOOT=1
+	else
+		MSG="No reboot required. Have a good day!"
+	fi	
+fi
+
+if (( DOREBOOT )); then
+	echo "${MSG}"
+	sleep "$SLEEPTIME"
+	reboot
+else
+	echo "${MSG}"
+fi
