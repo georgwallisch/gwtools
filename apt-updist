@@ -59,10 +59,11 @@ fi
 echo -e "done.\n"
 
 if (( DOBASEINSTALL )); then
-		printf 'Running INSTALL for : %s\n' "$BASEINSTALL"
+		printf 'Running INSTALL for: %s\n' "$BASEINSTALL"
 	if ! apt-get -y install "$BASEINSTALL"; then
 		echo "ERROR during apt-get install!"
-		echo -e "failed.\n"
+		echo -e "exiting..\n"
+		exit 1
 	else
 		echo -e "done.\n"
 	fi
@@ -90,12 +91,14 @@ if ! apt-get -y autoremove; then
 fi
 echo -e "done.\n"
 
-if command -v checkrestart >/dev/null 2>&1; then
-	echo "Finally running CHECKRESTART to see what needs to be restarted.."
-	checkrestart
-	echo -e "done.\n"
-else
-	echo "Skipping CHECKRESTART. Seems to be not available.."
+if (( ! FORCEREBOOT && ! SHUTDOWN )); then
+	if command -v checkrestart >/dev/null 2>&1; then
+		echo "Finally running CHECKRESTART to see what needs to be restarted.."
+		checkrestart
+		echo -e "done.\n"
+	else
+		echo "Skipping CHECKRESTART. Seems to be not available.."
+	fi
 fi
 
 echo -e "** Finished APT-GET Runner! **\n"
@@ -116,8 +119,8 @@ elif (( REBOOT )); then
 fi
 
 if (( SHUTDOWN )); then
-	echo "Time to shutdown the system as requested in ${SHUTDOWNTIME} minute(s).."	
-	shutdown -hP "+$SHUTDOWNTIME"
+	echo "Shutting down system in ${SHUTDOWNTIME} minute(s)..."
+	shutdown -hP "+${SHUTDOWNTIME}"
 elif (( DOREBOOT )); then
 	echo "${MSG}"
 	sleep "$SLEEPTIME"
