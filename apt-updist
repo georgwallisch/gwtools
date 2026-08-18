@@ -2,12 +2,18 @@
 
 REBOOT=0
 FORCEREBOOT=0
+SHUTDOWN=0
 SLEEPTIME=10
+SHUTDOWNTIME=1
+BASEINSTALL="openssh-server debian-goodies"
+DOBASEINSTALL=0
 
-while getopts "rR" opt; do
+while getopts "rRSB" opt; do
 	case "$opt" in
 		r) REBOOT=1 ;;
 		R) FORCEREBOOT=1 ;;
+		S) SHUTDOWN=1 ;;
+		B) DOBASEINSTALL=1 ;;
 	esac
 done
 
@@ -22,7 +28,16 @@ if (( EUID != 0 )); then
 	exit 1
 fi
 
-if (( FORCEREBOOT )); then
+SUMOPTS=$((SHUTDOWN + FORCEREBOOT + REBOOT))
+
+if (( SUMOPTS > 1 )); then
+	echo -e "ERROR: Multiple use of options -r -R and -S!\nYou may only use one of it!\nAborting..\n"
+	exit 1
+fi
+
+if (( SHUTDOWN )); then
+	echo -e "SHUTDOWN option is set! Will shutdown system when finished!!\n"
+elif (( FORCEREBOOT )); then
 	echo -e "FORCE REBOOT option is set! Will reboot when finished.\n"
 elif (( REBOOT )); then
 	echo -e "REBOOT option is set! Will reboot if necessary when finished.\n"
@@ -42,6 +57,16 @@ if ! apt-get -y full-upgrade; then
 	exit 1
 fi
 echo -e "done.\n"
+
+if (( DOBASEINSTALL )); then
+		printf 'Running INSTALL for : %s\n' "$BASEINSTALL"
+	if ! apt-get -y install "$BASEINSTALL"; then
+		echo "ERROR during apt-get install!"
+		echo -e "failed.\n"
+	else
+		echo -e "done.\n"
+	fi
+fi
 
 if [[ "$#" -gt 0 ]]; then
 	printf 'Running INSTALL for: %s\n' "$*"
@@ -86,11 +111,14 @@ elif (( REBOOT )); then
 		MSG="System reboot required. Rebooting in ${SLEEPTIME} seconds..."
 		DOREBOOT=1
 	else
-		MSG="No reboot required. Have a good day!"
+		MSG="No reboot required. $MSG"
 	fi	
 fi
 
-if (( DOREBOOT )); then
+if (( SHUTDOWN )); then
+	echo "Time to shutdown the system as requested in ${SHUTDOWNTIME} minute(s).."	
+	shutdown -hP "+$SHUTDOWNTIME"
+elif (( DOREBOOT )); then
 	echo "${MSG}"
 	sleep "$SLEEPTIME"
 	reboot
