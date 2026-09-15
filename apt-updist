@@ -5,8 +5,10 @@ FORCEREBOOT=0
 SHUTDOWN=0
 SLEEPTIME=10
 SHUTDOWNTIME=1
-BASEINSTALL="openssh-server debian-goodies"
+BASEINSTALL=(openssh-server debian-goodies)
 DOBASEINSTALL=0
+INSTALLPACKAGES=()
+VERSION="1.2"
 
 while getopts "rRSB" opt; do
 	case "$opt" in
@@ -19,9 +21,9 @@ done
 
 shift $((OPTIND-1))
 
-echo -e "\n *********************"
-echo -e " * gw APT-GET runner *"
-echo -e " *********************\n"
+echo -e "\n *************************"
+echo -e   " * gw APT-GET runner ${VERSION} *"
+echo -e   " *************************\n"
 
 if (( EUID != 0 )); then
 	echo "Script must be run as root. Try 'sudo $0'"
@@ -43,6 +45,15 @@ elif (( REBOOT )); then
 	echo -e "REBOOT option is set! Will reboot if necessary when finished.\n"
 fi
 
+if (( DOBASEINSTALL )); then
+	echo -e "BASE INSTALL option is set! Adding packets ${BASEINSTALL[@]} to install list.\n"
+	INSTALLPACKAGES+=("${BASEINSTALL[@]}")
+fi
+
+if (( $# > 0 )); then
+    INSTALLPACKAGES+=("$@")
+fi
+
 echo "Running UPDATE.."
 if ! apt-get update; then
 	echo "ERROR during apt-get update! Exiting.."
@@ -58,26 +69,21 @@ if ! apt-get -y full-upgrade; then
 fi
 echo -e "done.\n"
 
-if (( DOBASEINSTALL )); then
-		printf 'Running INSTALL for: %s\n' "$BASEINSTALL"
-	if ! apt-get -y install "$BASEINSTALL"; then
-		echo "ERROR during apt-get install!"
-		echo -e "exiting..\n"
-		exit 1
-	else
-		echo -e "done.\n"
-	fi
-fi
+if (( ${#INSTALLPACKAGES[@]} > 0 )); then
+    printf 'Running INSTALL for: %s\n' "${INSTALLPACKAGES[*]}"
 
-if [[ "$#" -gt 0 ]]; then
-	printf 'Running INSTALL for: %s\n' "$*"
-	if ! apt-get -y install "$@"; then
-		echo "ERROR during apt-get install!"
-		echo -e "failed.\n"
-	else
-		echo -e "done.\n"
-	fi
-fi	
+    if ! apt-get -y install "${INSTALLPACKAGES[@]}"; then
+        echo "ERROR during apt-get install!"
+        if (( DOBASEINSTALL )); then
+            echo -e "Baseinstall or additional package installation failed. Exiting..\n"
+            exit 1
+        else
+            echo -e "failed.\n"
+        fi
+    else
+        echo -e "done.\n"
+    fi
+fi
 
 echo "Running AUTOCLEAN.."
 if ! apt-get -y autoclean; then
