@@ -5,19 +5,44 @@ FORCEREBOOT=0
 SHUTDOWN=0
 SLEEPTIME=10
 SHUTDOWNTIME=1
+UPGRADEMODE="full-upgrade"
+AUTOREMOVE_SIMULATE=0
+AUTOREMOVEOPT=""
+ASSUMEYES=0
 BASEINSTALL=(openssh-server debian-goodies)
 DOBASEINSTALL=0
+SHOWHELP=0
 INSTALLPACKAGES=()
-VERSION="1.2"
+VERSION="1.3"
+OPTIONLIST="hnrRSBy"
 
-while getopts "rRSB" opt; do
+while getopts "$OPTIONLIST" opt; do
 	case "$opt" in
-		r) REBOOT=1 ;;
-		R) FORCEREBOOT=1 ;;
-		S) SHUTDOWN=1 ;;
+		h) SHOWHELP=1 ;;
+		n) UPGRADEMODE="upgrade"
+		   AUTOREMOVE_SIMULATE=1
+		   ;;
+		r) REBOOT=1
+		   AUTOREMOVE_SIMULATE=1
+		   ;;
+		R) FORCEREBOOT=1
+		   AUTOREMOVE_SIMULATE=1
+		   ;;
+		S) SHUTDOWN=1
+		   AUTOREMOVE_SIMULATE=1
+		   ;;
 		B) DOBASEINSTALL=1 ;;
+		y) ASSUMEYES=1 ;;
 	esac
 done
+
+if (( ASSUMEYES )); then
+    AUTOREMOVEOPT="-y"
+elif (( AUTOREMOVE_SIMULATE )); then
+    AUTOREMOVEOPT="-s"
+else
+    AUTOREMOVEOPT=""
+fi
 
 shift $((OPTIND-1))
 
@@ -25,10 +50,27 @@ echo -e "\n *************************"
 echo -e   " * gw APT-GET runner ${VERSION} *"
 echo -e   " *************************\n"
 
+
+if (( SHOWHELP )); then
+	echo -e "Usage: $(basename $0) [-$OPTIONLIST] [package names]\n\n"
+	echo -e "Options:\n"
+	echo -e "\t-n Do normal upgrade instead of full-upgrade. Also autoremove will be just simulated and not executed.\n"
+	echo -e "\t-r Reboot after script completed if necessary.\n"
+	echo -e "\t-R Force reboot after script completed.\n"
+	echo -e "\t-S Shutdown system ${SHUTDOWNTIME} minute(s) after script completed.\n"
+	echo -e "\t-B Install basic packages: ${BASEINSTALL[@]}\n"
+	echo -e "\t-y Assume yes on autoremove.\n"
+	echo -e "\n[package names]: Install given packages.\n\n"
+
+	exit 0
+fi
+
+
 if (( EUID != 0 )); then
-	echo "Script must be run as root. Try 'sudo $0'"
+	echo -e "Script must be run as root. Try 'sudo $0'\n"
 	exit 1
 fi
+
 
 SUMOPTS=$((SHUTDOWN + FORCEREBOOT + REBOOT))
 
@@ -61,10 +103,10 @@ if ! apt-get update; then
 fi
 echo -e "done.\n"
 
-echo "Running FULL UPGRADE.."
+echo "Running ${UPGRADEMODE^^}.."
 
-if ! apt-get -y full-upgrade; then
-	echo "ERROR during apt-get full-upgrade! Exiting.."
+if ! apt-get -y $UPGRADEMODE; then
+	echo "ERROR during apt-get ${UPGRADEMODE}! Exiting.."
 	exit 1
 fi
 echo -e "done.\n"
@@ -86,16 +128,18 @@ if (( ${#INSTALLPACKAGES[@]} > 0 )); then
 fi
 
 echo "Running AUTOCLEAN.."
-if ! apt-get -y autoclean; then
+if ! apt-get autoclean; then
 	echo "ERROR during autoclean!"
+else
+	echo -e "done.\n"
 fi
-echo -e "done.\n"
 
 echo "Running AUTOREMOVE.."
-if ! apt-get -y autoremove; then
+if ! apt-get $AUTOREMOVEOPT autoremove; then
 	echo "ERROR during autoremove!"
+else
+	echo -e "done.\n"
 fi
-echo -e "done.\n"
 
 if (( ! FORCEREBOOT && ! SHUTDOWN )); then
 	if command -v checkrestart >/dev/null 2>&1; then
